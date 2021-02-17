@@ -1,3 +1,15 @@
+import java.awt.Desktop
+
+buildscript {
+    repositories {
+        jcenter()
+    }
+
+    dependencies {
+        classpath 'org.asciidoctor:asciidoctor-gradle-plugin:1.6.1'
+    }
+}
+
 plugins {
 	id 'org.springframework.boot' version '2.4.2'
 	id 'io.spring.dependency-management' version '1.0.11.RELEASE'
@@ -10,11 +22,88 @@ group = 'com.ggunawan'
 version = '0.0.1-SNAPSHOT'
 sourceCompatibility = '11'
 
+apply plugin: 'jacoco'
+apply plugin: "org.asciidoctor.convert"
+apply plugin: org.asciidoctor.gradle.AsciidoctorPlugin
+
 ext {
 	snippetsDir = file('build/generated-snippets')
 }
 
-ext['spring-restdocs.version'] = '2.0.6.BUILD-SNAPSHOT'
+asciidoctor {
+	inputs.dir snippetsDir
+	dependsOn test
+}
+
+sourceSets {
+    doc {
+        java {
+            compileClasspath += main.output + test.output
+            runtimeClasspath += main.output + test.output
+            srcDir file('src/main/java/asciidoc')
+        }
+        resources.srcDir file('src/main/java/asciidoc/markup')
+    }
+}
+
+def jacocoExcludedClasses = ["com/ggunawan/rainyhills/controllers*",
+                             "com/ggunawan/rainyhills/models*",
+                             "com/ggunawan/rainyhills/ServletInitializer*",
+                             "com/ggunawan/rainyhills/RainyhillsApplication*"]
+
+jacocoTestReport {
+	reports {
+        //XML required by coveralls and for the below coverage checks
+        xml.enabled true
+        html.destination file("${jacoco.reportsDir}/html")
+    }
+    afterEvaluate {
+        getClassDirectories().setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it,
+                    exclude: jacocoExcludedClasses)
+        }))
+    }
+    doLast {
+        def report = file("${jacoco.reportsDir}/test/jacocoTestReport.xml")
+        def parser = new XmlParser()
+        parser.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+        parser.setFeature("http://apache.org/xml/features/disallow-doctype-decl", false)
+        def results = parser.parse(report)
+
+        def percentage = {
+            def covered = it.'@covered' as Double
+            def missed = it.'@missed' as Double
+            ((covered / (covered + missed)) * 100).round(2)
+        }
+        def counters = results.counter
+        def metrics = [:]
+        metrics << [
+                'instruction': percentage(counters.find { it.'@type'.equals('INSTRUCTION') }),
+                'branch'     : percentage(counters.find { it.'@type'.equals('BRANCH') }),
+                'line'       : percentage(counters.find { it.'@type'.equals('LINE') }),
+                'complexity' : percentage(counters.find { it.'@type'.equals('COMPLEXITY') }),
+                'method'     : percentage(counters.find { it.'@type'.equals('METHOD') }),
+                'class'      : percentage(counters.find { it.'@type'.equals('CLASS') })
+        ]
+        def fail = false
+        metrics.each {
+            // threshold 100
+            if (it.value < 100) {
+                fail = true
+                true //break
+            }
+        }
+        if (fail) {
+            if(Desktop.isDesktopSupported()) {
+                String fileName = "file:" + jacoco.reportsDir.path.replace("\\", "/") + "/html/index.html"
+                Desktop.getDesktop().browse(fileName.toURI())
+            }
+            throw new GradleException("Code coverage failed")
+        }
+    }
+}
+
+//ext['spring-restdocs.version'] = '2.0.6.BUILD-SNAPSHOT'
 
 configurations {
 	compileOnly {
@@ -27,6 +116,8 @@ repositories {
 }
 
 dependencies {
+	compile group: 'io.springfox', name: 'springfox-swagger2', version: '2.7.0'
+	compile group: 'io.springfox', name: 'springfox-swagger-ui', version: '2.7.0'
 	asciidoctor 'org.springframework.restdocs:spring-restdocs-asciidoctor'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	compileOnly 'org.projectlombok:lombok'
@@ -43,12 +134,8 @@ test {
 	useJUnitPlatform()
 }
 
-asciidoctor {
-	inputs.dir snippetsDir
-	dependsOn test
-}
-
 bootWar {
+	dependsOn jacocoTestReport
 	dependsOn asciidoctor
 	from ("${asciidoctor.outputDir}/html5") {
 		into 'static/docs'
