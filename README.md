@@ -12,6 +12,8 @@ Start the app with following command:
 Access the application via browser
 [http://localhost:8080/](http://localhost:8080/) .
 
+![image info](./pictures/rainyhills-ui.PNG)
+
 ### Application Structure
 This application is split into frontend which is created using HTML, CSS (Bootstrap framework) & Javascript (jQuery) and backend part which is created using Java SpringBoot. The frontend will access the backend service via REST API call.
 The backend part is split into service level ([VolumeCalculatorServiceImpl](./src/main/java/com/ggunawan/rainyhills/services/VolumeCalculatorServiceImpl.java)) and REST API level ([RainyHillsController](./src/main/java/com/ggunawan/rainyhills/controllers/RainyHillsController.java)).
